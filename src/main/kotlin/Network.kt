@@ -1,12 +1,17 @@
 import org.nd4j.linalg.api.iter.NdIndexIterator
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
-import org.nd4j.linalg.indexing.INDArrayIndex
-import org.nd4j.linalg.indexing.NDArrayIndex
 import org.nd4j.linalg.factory.Nd4j as nd
 import org.nd4j.linalg.ops.transforms.Transforms.*
 import java.lang.IllegalArgumentException
 import kotlin.math.pow
+import kotlin.random.Random
+
+
+// TODO: Save weights and load from saved weights
+// TODO: Fix Gradient Checking or gradient computation (one or the other is wrong)
+// TODO: Test on other dataset (maybe MNIST?)
+// TODO: Write documentation
 
 /*
 M refers to the size of the batch
@@ -49,8 +54,8 @@ class Network(private vararg val dimensions: Int) {
         // Compute the output error signal
         var errorSignal = dMse(preds, labels).mul(dSigmoid(activations.last()))
 
-        var gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
-        var gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
+        val gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
+        val gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
 
         // Iteratively compute each layer's parameters gradients while propagating the error signal
         for (i in dimensions.size - 2 downTo 0) {
@@ -194,7 +199,16 @@ fun main() {
     network.train(trainSet, 10000, 25, 0.6)
 
     // Test against test set
-    println("Test mse: ${network.test(testSet)}")
+    println("\nTest mse: ${network.test(testSet)}")
     println("Test accuract: ${network.testAccuracy(testSet)}")
+
+    // Prediction example
+    val data = testSet.get(Random.nextInt(testSet.count()))
+    val pred = network.feedForward(data.features)
+    println("""
+        |Input: ${data.features}
+        |Prediction: $pred
+        |Label: ${data.labels}
+    """.trimMargin())
 
 }
