@@ -1,6 +1,8 @@
 import org.nd4j.linalg.api.iter.NdIndexIterator
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
+import org.nd4j.linalg.indexing.INDArrayIndex
+import org.nd4j.linalg.indexing.NDArrayIndex
 import org.nd4j.linalg.factory.Nd4j as nd
 import org.nd4j.linalg.ops.transforms.Transforms.*
 import java.lang.IllegalArgumentException
@@ -42,12 +44,28 @@ class Network(private vararg val dimensions: Int) {
 
     private fun dSigmoid(a: INDArray): INDArray = sigmoid(a).mul(sigmoid(a).rsub(1))
 
+    private fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
+
+        // Compute the output error signal
+        var errorSignal = dMse(preds, labels).mul(dSigmoid(activations.last()))
+
+        var gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
+        var gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
+
+        // Iteratively compute each layer's parameters gradients while propagating the error signal
+        for (i in dimensions.size - 2 downTo 0) {
+            gradWeights[i] = errorSignal.transpose().mmul(activations[i]).div(errorSignal.rows())
+            gradBiases[i] = errorSignal.sum(0).div(errorSignal.rows()).transpose()
+            errorSignal = errorSignal.mmul(weights[i]).mul(dSigmoid(activations[i]))
+        }
+
+        return Gradients(gradWeights, gradBiases)
+    }
 
     fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-7) : Boolean {
 
         // Compute gradient analytically
         val grads = computeGradients(feedForward(input), label)
-
 
         // Initialize gradients arrays
         val gradWeights = grads.weights.map { it.dup() }.toTypedArray()
@@ -105,25 +123,6 @@ class Network(private vararg val dimensions: Int) {
         return grads.isAproxEqual(Gradients(gradWeights, gradBiases), eps)
     }
 
-    fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
-
-        // Compute the output error signal
-        var errorSignal = dMse(preds, labels).mul(dSigmoid(activations.last()))
-
-        var gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
-        var gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
-
-        // Iteratively compute each layer's parameters gradients while propagating the error signal
-        for (i in dimensions.size - 2 downTo 0) {
-            gradWeights[i] = errorSignal.transpose().mmul(activations[i]).div(errorSignal.rows())
-            gradBiases[i] = errorSignal.sum(0).div(errorSignal.rows()).transpose()
-            errorSignal = errorSignal.mmul(weights[i]).mul(dSigmoid(activations[i]))
-        }
-
-        return Gradients(gradWeights, gradBiases)
-    }
-
-
     fun train(trainSet: DataSet, nEpoch: Int, batchSize: Int, learningRate: Double) {
         for (epoch in 0 until nEpoch) {
             val cost = mse(feedForward(trainSet.features), trainSet.labels)
@@ -139,35 +138,15 @@ class Network(private vararg val dimensions: Int) {
             }
         }
     }
-}
 
+    fun test(testSet: DataSet): Double {
+        return mse(feedForward(testSet.features), testSet.labels)
+    }
 
-fun main() {
-    nd.getRandom().setSeed(42)
-
-    // Fetch preprocessed data
-    val testAndTrain = Preprocessor("wine.data").getPreprocessedData()
-    val trainSet = testAndTrain.train
-    val testSet = testAndTrain.test
-
-
-    // Instantiate network
-    val network = Network(2, 3, 2)
-
-
-    // TESTING
-    val input = nd.create(doubleArrayOf(1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0)).reshape(-1, 2)
-    val labels = nd.create(doubleArrayOf(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0)).reshape(-1, 2)
-
-    val preds = network.feedForward(input)
-    val grads = network.computeGradients(preds, labels)
-
-    println(network.performGradientChecking(input.getRow(0), labels.getRow(0)))
-
-//    network.train(trainSet, 1, 10, 0.01)
-
-
-
+    fun testAccuracy(testSet: DataSet): Double {
+        val preds = feedForward(testSet.features)
+        return preds.argMax(1).eq(testSet.labels.argMax(1)).sum(0).getDouble(0, 0) / testSet.count()
+    }
 }
 
 
@@ -191,7 +170,31 @@ data class Gradients(val weights: Array<INDArray>, val biases: Array<INDArray>) 
         for (i in 0 until biases.size) {
             if (!biases[i].equalsWithEps(other.biases[i], eps)) return false
         }
-
         return true
     }
+}
+
+
+fun main() {
+    nd.getRandom().setSeed(42)
+
+    // Fetch preprocessed data
+    val testAndTrain = Preprocessor("wine.data").getPreprocessedData()
+    val trainSet = testAndTrain.train
+    val testSet = testAndTrain.test
+
+
+    // Instantiate network
+    val network = Network(13, 35, 3)
+
+    // TESTING
+    println(network.performGradientChecking(trainSet.get(0).features, trainSet.get(0).labels))
+
+    // Train network
+    network.train(trainSet, 10000, 25, 0.6)
+
+    // Test against test set
+    println("Test mse: ${network.test(testSet)}")
+    println("Test accuract: ${network.testAccuracy(testSet)}")
+
 }
