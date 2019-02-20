@@ -1,14 +1,9 @@
 import org.nd4j.linalg.api.ndarray.INDArray
-import org.nd4j.linalg.cpu.nativecpu.NDArray
 import org.nd4j.linalg.dataset.DataSet
-import org.nd4j.linalg.indexing.NDArrayIndex
 import org.nd4j.linalg.factory.Nd4j as nd
 import org.nd4j.linalg.ops.transforms.Transforms.*
 import java.lang.IllegalArgumentException
-import java.util.HashMap
 import kotlin.math.pow
-
-
 
 /*
 M refers to the size of the batch
@@ -72,15 +67,21 @@ class Network(private vararg val dimensions: Int) {
         return Gradients(gradWeights, gradBiases)
     }
 
-    /*
-    preds and labels should be a M x N matrices where M is the size of the batch and N the dimensionality of the output.
-     */
-    fun backprop(preds: INDArray, labels: INDArray, learningRate: Double) {
-        
-    }
 
-    fun train(trainSet: DataSet) {
-
+    fun train(trainSet: DataSet, nEpoch: Int, batchSize: Int, learningRate: Int) {
+        for (epoch in 0 until nEpoch) {
+            val cost = mse(feedForward(trainSet.features), trainSet.labels)
+            println("Epoch: $epoch, Cost: $cost")
+            for (batchRange in 0 until trainSet.count() step batchSize) {
+                val batch = trainSet.getRange(batchRange, batchRange + batchSize)
+                val preds = this.feedForward(batch.features)
+                val grads  = this.computeGradients(preds, batch.labels)
+                for (i in 0 until dimensions.size - 1) {
+                    this.weights[i].subi(grads.weights[i].mul(learningRate))
+                    this.biases[i].subi(grads.biases[i].mul(learningRate))
+                }
+            }
+        }
     }
 
 }
@@ -105,7 +106,7 @@ fun main() {
 
     val preds = network.feedForward(input)
     val grads = network.computeGradients(preds, labels)
-    println(grads)
+    network.train(trainSet, 1, 10)
 
 
 
