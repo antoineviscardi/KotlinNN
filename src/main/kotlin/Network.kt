@@ -1,3 +1,4 @@
+import org.nd4j.linalg.api.iter.NdIndexIterator
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.factory.Nd4j as nd
@@ -31,22 +32,77 @@ class Network(private vararg val dimensions: Int) {
         return activations.last()
     }
 
-    fun mse(preds: INDArray, labels: INDArray) : INDArray {
+    private fun mse(preds: INDArray, labels: INDArray) : Double {
         val diff = preds.sub(labels)
         val sqr = pow(diff, 2)
-        return sqr.sum(0).divi(labels.rows())
+        return sqr.sum(1).divi(labels.columns()).sum(0).divi(labels.rows()).getDouble(0, 0)
     }
 
-    fun dMse(preds: INDArray, labels: INDArray): INDArray {
-        return preds.sub(labels)
-    }
+    private fun dMse(preds: INDArray, labels: INDArray): INDArray = preds.sub(labels)
 
-    fun dSigmoid(a: INDArray): INDArray {
-        return sigmoid(a).mul(sigmoid(a).rsub(1))
-    }
+    private fun dSigmoid(a: INDArray): INDArray = sigmoid(a).mul(sigmoid(a).rsub(1))
 
-    fun computeGradientsChecking() : Gradients {
-        return Gradients(arrayOf(nd.empty()), arrayOf(nd.empty()))
+
+    fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-7) : Boolean {
+
+        // Compute gradient analytically
+        val grads = computeGradients(feedForward(input), label)
+
+
+        // Initialize gradients arrays
+        val gradWeights = grads.weights.map { it.dup() }.toTypedArray()
+        val gradBiases = grads.biases.map { it.dup() }.toTypedArray()
+
+        // Compute gradients for weights using two sided method
+        for (i in 0 until weights.size) {
+            val iter = NdIndexIterator(weights[i].rows(), weights[i].columns())
+            while (iter.hasNext()) {
+                val index = iter.next()
+                val initialValue = weights[i].getFloat(index)
+
+                // Compute cost at parameter + eps
+                weights[i].putScalar(index, initialValue + eps)
+                val costPlus = mse(feedForward(input), label)
+
+                // Compute cost at parameter - eps
+                weights[i].putScalar(index, initialValue - eps)
+                val costMinus = mse(feedForward(input), label)
+
+                // Reset weight to initial value
+                weights[i].putScalar(index, initialValue + eps)
+
+                // Compute gradient
+                val grad = (costPlus - costMinus) / (2 * eps)
+                gradWeights[i].putScalar(index, grad)
+            }
+        }
+
+        // Compute gradients of biases using two sided method
+        for (i in 0 until biases.size) {
+            val iter = NdIndexIterator(biases[i].rows(), biases[i].columns())
+            while (iter.hasNext()) {
+                val index = iter.next()
+                val initialValue = biases[i].getFloat(index)
+
+                // Compute cost at parameter + eps
+                biases[i].putScalar(index, initialValue + eps)
+                val costPlus = mse(feedForward(input), label)
+
+                // Compute cost at parameter - eps
+                biases[i].putScalar(index, initialValue - eps)
+                val costMinus = mse(feedForward(input), label)
+
+                // Reset weight to initial value
+                biases[i].putScalar(index, initialValue)
+
+                // Compute gradient
+                val grad = (costPlus - costMinus) / (2 * eps)
+                gradBiases[i].putScalar(index, grad)
+            }
+        }
+
+        // Compare and return whether or not the test passed
+        return grads.isAproxEqual(Gradients(gradWeights, gradBiases), eps)
     }
 
     fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
@@ -59,8 +115,8 @@ class Network(private vararg val dimensions: Int) {
 
         // Iteratively compute each layer's parameters gradients while propagating the error signal
         for (i in dimensions.size - 2 downTo 0) {
-            gradWeights.set(i, activations[i].transpose().mmul(errorSignal).div(errorSignal.rows()))
-            gradBiases.set(i, errorSignal.sum(0).div(errorSignal.rows()))
+            gradWeights[i] = errorSignal.transpose().mmul(activations[i]).div(errorSignal.rows())
+            gradBiases[i] = errorSignal.sum(0).div(errorSignal.rows()).transpose()
             errorSignal = errorSignal.mmul(weights[i]).mul(dSigmoid(activations[i]))
         }
 
@@ -68,7 +124,7 @@ class Network(private vararg val dimensions: Int) {
     }
 
 
-    fun train(trainSet: DataSet, nEpoch: Int, batchSize: Int, learningRate: Int) {
+    fun train(trainSet: DataSet, nEpoch: Int, batchSize: Int, learningRate: Double) {
         for (epoch in 0 until nEpoch) {
             val cost = mse(feedForward(trainSet.features), trainSet.labels)
             println("Epoch: $epoch, Cost: $cost")
@@ -83,7 +139,6 @@ class Network(private vararg val dimensions: Int) {
             }
         }
     }
-
 }
 
 
@@ -106,7 +161,10 @@ fun main() {
 
     val preds = network.feedForward(input)
     val grads = network.computeGradients(preds, labels)
-    network.train(trainSet, 1, 10)
+
+    println(network.performGradientChecking(input.getRow(0), labels.getRow(0)))
+
+//    network.train(trainSet, 1, 10, 0.01)
 
 
 
@@ -122,9 +180,7 @@ data class Gradients(val weights: Array<INDArray>, val biases: Array<INDArray>) 
     Utility function that returns true if gradients are approximately equal. That is, the difference between each
     corresponding element is not more than 10^-4
      */
-    fun isAproxEqual(other: Gradients): Boolean {
-
-        val eps = 10.0.pow(-4)
+    fun isAproxEqual(other: Gradients, eps: Double = 10.0.pow(-7)): Boolean {
 
         // Compare weights
         for (i in 0 until weights.size) {
