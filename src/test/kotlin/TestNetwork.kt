@@ -1,25 +1,26 @@
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.nd4j.linalg.factory.Nd4j
 import org.spekframework.spek2.Spek
 import org.spekframework.spek2.style.specification.describe
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 
-object TestMathUtils : Spek ({
-    val preds = Nd4j.create(doubleArrayOf(12.0, 7.0, 8.0, 4.0))
-    val labels = Nd4j.create(doubleArrayOf(1.0, 0.0, 1.0, 1.0))
-    val cost = MathUtils.mse(preds, labels)
-    val dCost = MathUtils.dMse(preds, labels)
+object TestNetwork : Spek({
 
+    val net = Network(2, 3, 2)
+    net.weights = arrayOf(Nd4j.ones(3, 2), Nd4j.ones(2, 3))
+    net.biases = arrayOf(Nd4j.zeros(3, 1), Nd4j.zeros(2, 1).sub(1.5))
 
-    describe("Compute cost") {
-        it("Should correctly compute the MSE") {
-            assertEquals(114.0, cost.getDouble(0, 0))
+    describe("Forward pass") {
+
+        it("Should be able to feed forward") {
+            val output = net.feedForward(Nd4j.zeros(1, 2))
+            val expected = Nd4j.zeros(1, 2).add(0.5)
+            assertTrue(expected.equals(output))
+            assertTrue(expected.equalShapes(output))
         }
-    }
 
-    describe("Compute cost derivative") {
-        it("Should correctly compute the MSE derivative") {
-            val dCostReal = Nd4j.create(doubleArrayOf(11.0, 7.0, 7.0, 3.0))
-            assertEquals(dCostReal, dCost)
+        it("Should be able to do backward propagation") {
+
         }
     }
 })

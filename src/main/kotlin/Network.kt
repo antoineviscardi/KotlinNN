@@ -2,13 +2,11 @@ import org.nd4j.linalg.api.iter.NdIndexIterator
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.factory.Nd4j as nd
-import org.nd4j.linalg.ops.transforms.Transforms.*
+import MathUtils.sigmoid
 import java.lang.IllegalArgumentException
 import kotlin.math.pow
-import kotlin.random.Random
 
 
-// TODO: Save weights and load from saved weights
 // TODO: Fix Gradient Checking or gradient computation (one or the other is wrong)
 // TODO: Test on other dataset (maybe MNIST?)
 // TODO: Write documentation
@@ -19,8 +17,28 @@ N refers to the dimensionality of the layer
  */
 class Network(private vararg val dimensions: Int) {
 
-    private val weights = Array<INDArray>(dimensions.size - 1) { nd.rand(dimensions[it + 1], dimensions[it]) }
-    private val biases = Array<INDArray>(dimensions.size - 1) {nd.rand(dimensions[it + 1], 1)}
+    var weights = Array<INDArray>(dimensions.size - 1) { nd.rand(dimensions[it + 1], dimensions[it]) }
+        set(value) {
+            if (value.size != weights.size)
+                throw IllegalArgumentException("The list of weight matrices has the wrong size")
+            for ((a, b) in weights.zip(value)) {
+                if (!a.equalShapes(b))
+                    throw IllegalArgumentException("The weight matrices do not conform to the network dimensions")
+            }
+            field = value
+        }
+
+    var biases = Array<INDArray>(dimensions.size - 1) {nd.rand(dimensions[it + 1], 1)}
+        set(value) {
+            if (value.size != biases.size)
+                throw IllegalArgumentException("The list of biases vectors has the wrong size")
+            for ((a, b) in biases.zip(value)) {
+                if (!a.equalShapes(b))
+                    throw IllegalArgumentException("The biases vectors do not conform to the network dimensions")
+            }
+            field = value
+        }
+
     private val weightedInputs = Array<INDArray>(dimensions.size - 1) { nd.zeros(1, dimensions[it]) }
     private val activations = Array<INDArray>(dimensions.size) { nd.zeros(1, dimensions[it]) }
 
@@ -34,7 +52,7 @@ class Network(private vararg val dimensions: Int) {
         activations[0] = input
         for (i in 0 until dimensions.size - 1) {
             weightedInputs[i] = activations[i].mmul(weights[i].transpose()).addRowVector(biases[i].transpose())
-            activations[i + 1] = sigmoid(weightedInputs[i])
+            activations[i + 1] = weightedInputs[i].sigmoid()
         }
         return activations.last()
     }
