@@ -39,20 +39,10 @@ class Network(private vararg val dimensions: Int) {
         return activations.last()
     }
 
-    private fun mse(preds: INDArray, labels: INDArray) : Double {
-        val diff = preds.sub(labels)
-        val sqr = pow(diff, 2)
-        return sqr.sum(1).divi(labels.columns()).sum(0).divi(labels.rows()).getDouble(0, 0)
-    }
-
-    private fun dMse(preds: INDArray, labels: INDArray): INDArray = preds.sub(labels)
-
-    private fun dSigmoid(a: INDArray): INDArray = sigmoid(a).mul(sigmoid(a).rsub(1))
-
     private fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
 
         // Compute the output error signal
-        var errorSignal = dMse(preds, labels).mul(dSigmoid(activations.last()))
+        var errorSignal = MathUtils.dMse(preds, labels).mul(MathUtils.dSigmoid(activations.last()))
 
         val gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
         val gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
@@ -61,13 +51,13 @@ class Network(private vararg val dimensions: Int) {
         for (i in dimensions.size - 2 downTo 0) {
             gradWeights[i] = errorSignal.transpose().mmul(activations[i]).div(errorSignal.rows())
             gradBiases[i] = errorSignal.sum(0).div(errorSignal.rows()).transpose()
-            errorSignal = errorSignal.mmul(weights[i]).mul(dSigmoid(activations[i]))
+            errorSignal = errorSignal.mmul(weights[i]).mul(MathUtils.dSigmoid(activations[i]))
         }
 
         return Gradients(gradWeights, gradBiases)
     }
 
-    fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-7) : Boolean {
+    fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-4) : Boolean {
 
         // Compute gradient analytically
         val grads = computeGradients(feedForward(input), label)
@@ -85,11 +75,11 @@ class Network(private vararg val dimensions: Int) {
 
                 // Compute cost at parameter + eps
                 weights[i].putScalar(index, initialValue + eps)
-                val costPlus = mse(feedForward(input), label)
+                val costPlus = MathUtils.avgMse(feedForward(input), label)
 
                 // Compute cost at parameter - eps
                 weights[i].putScalar(index, initialValue - eps)
-                val costMinus = mse(feedForward(input), label)
+                val costMinus = MathUtils.avgMse(feedForward(input), label)
 
                 // Reset weight to initial value
                 weights[i].putScalar(index, initialValue + eps)
@@ -109,11 +99,11 @@ class Network(private vararg val dimensions: Int) {
 
                 // Compute cost at parameter + eps
                 biases[i].putScalar(index, initialValue + eps)
-                val costPlus = mse(feedForward(input), label)
+                val costPlus = MathUtils.avgMse(feedForward(input), label)
 
                 // Compute cost at parameter - eps
                 biases[i].putScalar(index, initialValue - eps)
-                val costMinus = mse(feedForward(input), label)
+                val costMinus = MathUtils.avgMse(feedForward(input), label)
 
                 // Reset weight to initial value
                 biases[i].putScalar(index, initialValue)
@@ -130,7 +120,7 @@ class Network(private vararg val dimensions: Int) {
 
     fun train(trainSet: DataSet, nEpoch: Int, batchSize: Int, learningRate: Double) {
         for (epoch in 0 until nEpoch) {
-            val cost = mse(feedForward(trainSet.features), trainSet.labels)
+            val cost = MathUtils.avgMse(feedForward(trainSet.features), trainSet.labels)
             println("Epoch: $epoch, Cost: $cost")
             for (batchRange in 0 until trainSet.count() step batchSize) {
                 val batch = trainSet.getRange(batchRange, batchRange + batchSize)
@@ -145,7 +135,7 @@ class Network(private vararg val dimensions: Int) {
     }
 
     fun test(testSet: DataSet): Double {
-        return mse(feedForward(testSet.features), testSet.labels)
+        return MathUtils.avgMse(feedForward(testSet.features), testSet.labels)
     }
 
     fun testAccuracy(testSet: DataSet): Double {
@@ -188,27 +178,26 @@ fun main() {
     val trainSet = testAndTrain.train
     val testSet = testAndTrain.test
 
-
     // Instantiate network
     val network = Network(13, 35, 3)
 
-    // TESTING
+    // Gradient checking
     println(network.performGradientChecking(trainSet.get(0).features, trainSet.get(0).labels))
 
-    // Train network
-    network.train(trainSet, 10000, 25, 0.6)
-
-    // Test against test set
-    println("\nTest mse: ${network.test(testSet)}")
-    println("Test accuract: ${network.testAccuracy(testSet)}")
-
-    // Prediction example
-    val data = testSet.get(Random.nextInt(testSet.count()))
-    val pred = network.feedForward(data.features)
-    println("""
-        |Input: ${data.features}
-        |Prediction: $pred
-        |Label: ${data.labels}
-    """.trimMargin())
+//    // Train network
+//    network.train(trainSet, 10000, 25, 0.6)
+//
+//    // Test against test set
+//    println("\nTest mse: ${network.test(testSet)}")
+//    println("Test accuract: ${network.testAccuracy(testSet)}")
+//
+//    // Prediction example
+//    val data = testSet.get(Random.nextInt(testSet.count()))
+//    val pred = network.feedForward(data.features)
+//    println("""
+//        |Input: ${data.features}
+//        |Prediction: $pred
+//        |Label: ${data.labels}
+//    """.trimMargin())
 
 }
