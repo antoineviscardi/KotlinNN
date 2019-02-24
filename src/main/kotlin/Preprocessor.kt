@@ -1,3 +1,4 @@
+import org.nd4j.linalg.api.buffer.DataBuffer
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.dataset.SplitTestAndTrain
 import org.nd4j.linalg.dataset.api.preprocessor.NormalizerStandardize
@@ -5,6 +6,8 @@ import org.nd4j.linalg.factory.Nd4j
 import org.nd4j.linalg.indexing.NDArrayIndex
 
 class Preprocessor (val file: String) {
+
+    init { Nd4j.setDataType(DataBuffer.Type.DOUBLE) }
 
     private val rawData = Nd4j.readNumpy(ClassLoader.getSystemResource(file).path, ",")
     private val dataset = DataSet(rawData.get(NDArrayIndex.all(), NDArrayIndex.interval(1, rawData.columns())), rawData.getColumn(0))

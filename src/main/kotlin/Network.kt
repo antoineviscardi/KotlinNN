@@ -3,11 +3,11 @@ import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.factory.Nd4j as nd
 import MathUtils.sigmoid
+import org.nd4j.linalg.api.buffer.DataBuffer
 import java.lang.IllegalArgumentException
 import kotlin.math.pow
+import kotlin.random.Random
 
-
-// TODO: Fix Gradient Checking or gradient computation (one or the other is wrong)
 // TODO: Test on other dataset (maybe MNIST?)
 // TODO: Write documentation
 
@@ -16,6 +16,8 @@ M refers to the size of the batch
 N refers to the dimensionality of the layer
  */
 class Network(private vararg val dimensions: Int) {
+
+    init { nd.setDataType(DataBuffer.Type.DOUBLE) }
 
     var weights = Array<INDArray>(dimensions.size - 1) { nd.rand(dimensions[it + 1], dimensions[it]) }
         set(value) {
@@ -28,7 +30,7 @@ class Network(private vararg val dimensions: Int) {
             field = value
         }
 
-    var biases = Array<INDArray>(dimensions.size - 1) {nd.rand(dimensions[it + 1], 1)}
+    var biases = Array<INDArray>(dimensions.size - 1) { nd.rand(dimensions[it + 1], 1) }
         set(value) {
             if (value.size != biases.size)
                 throw IllegalArgumentException("The list of biases vectors has the wrong size")
@@ -49,7 +51,7 @@ class Network(private vararg val dimensions: Int) {
         if (input.columns() != dimensions[0]) {
             throw IllegalArgumentException("Was expecting input of dimension ${dimensions[0]} but got ${input.columns()} instead")
         }
-        activations[0] = input
+        activations[0] = input.convertToDoubles()
         for (i in 0 until dimensions.size - 1) {
             weightedInputs[i] = activations[i].mmul(weights[i].transpose()).addRowVector(biases[i].transpose())
             activations[i + 1] = weightedInputs[i].sigmoid()
@@ -57,25 +59,26 @@ class Network(private vararg val dimensions: Int) {
         return activations.last()
     }
 
-    private fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
+    fun computeGradients(preds: INDArray, labels: INDArray) : Gradients {
 
         // Compute the output error signal
-        var errorSignal = MathUtils.dMse(preds, labels).mul(MathUtils.dSigmoid(activations.last()))
+        var errorSignal = MathUtils.dMse(preds, labels).mul(MathUtils.dSigmoid(weightedInputs.last()))
 
-        val gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty() }
-        val gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty() }
+        val gradWeights = Array<INDArray>(dimensions.size - 1) { nd.empty(DataBuffer.Type.DOUBLE) }
+        val gradBiases = Array<INDArray>(dimensions.size - 1) { nd.empty(DataBuffer.Type.DOUBLE) }
 
         // Iteratively compute each layer's parameters gradients while propagating the error signal
         for (i in dimensions.size - 2 downTo 0) {
             gradWeights[i] = errorSignal.transpose().mmul(activations[i]).div(errorSignal.rows())
             gradBiases[i] = errorSignal.sum(0).div(errorSignal.rows()).transpose()
-            errorSignal = errorSignal.mmul(weights[i]).mul(MathUtils.dSigmoid(activations[i]))
+            if (i == 0) break
+            errorSignal = errorSignal.mmul(weights[i]).mul(MathUtils.dSigmoid(weightedInputs[i-1]))
         }
 
         return Gradients(gradWeights, gradBiases)
     }
 
-    fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-4) : Boolean {
+    fun performGradientChecking(input: INDArray, label: INDArray, eps: Double = 1E-3) : Boolean {
 
         // Compute gradient analytically
         val grads = computeGradients(feedForward(input), label)
@@ -200,22 +203,22 @@ fun main() {
     val network = Network(13, 35, 3)
 
     // Gradient checking
-    println(network.performGradientChecking(trainSet.get(0).features, trainSet.get(0).labels))
+    println(network.performGradientChecking(trainSet.get(0).features.convertToDoubles(), trainSet.get(0).labels))
 
-//    // Train network
-//    network.train(trainSet, 10000, 25, 0.6)
-//
-//    // Test against test set
-//    println("\nTest mse: ${network.test(testSet)}")
-//    println("Test accuract: ${network.testAccuracy(testSet)}")
-//
-//    // Prediction example
-//    val data = testSet.get(Random.nextInt(testSet.count()))
-//    val pred = network.feedForward(data.features)
-//    println("""
-//        |Input: ${data.features}
-//        |Prediction: $pred
-//        |Label: ${data.labels}
-//    """.trimMargin())
+    // Train network
+    network.train(trainSet, 1500, 25, 0.1)
+
+    // Test against test set
+    println("\nTest mse: ${network.test(testSet)}")
+    println("Test accuract: ${network.testAccuracy(testSet)}")
+
+    // Prediction example
+    val data = testSet.get(Random.nextInt(testSet.count()))
+    val pred = network.feedForward(data.features)
+    println("""
+        |Input: ${data.features}
+        |Prediction: $pred
+        |Label: ${data.labels}
+    """.trimMargin())
 
 }
